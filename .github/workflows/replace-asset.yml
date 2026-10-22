@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+#
+# R-003 protocol step 3: replace the asset of a MUTABLE release with a rebuilt
+# file of the same name and different bytes. The job deliberately has no
+# id-token or attestations permission, so the replacement carries no artifact
+# attestation.
+
+name: r003-replace-asset
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: mutable release tag (vMAJOR.MINOR.PATCH-mutable)
+        required: true
+      version:
+        description: fixture version (MAJOR.MINOR.PATCH), must match the tag
+        required: true
+      variant:
+        description: payload marker that changes the rebuilt bytes ([a-z0-9-], 1-32)
+        required: true
+
+permissions: {}
+
+jobs:
+  replace:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check inputs
+        env:
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$TAG" != "v${VERSION}-mutable" ]]; then
+            echo "refusing: tag must be v${VERSION}-mutable" >&2
+            exit 1
+          fi
+      - name: Rebuild fixture
+        env:
+          VERSION: ${{ inputs.version }}
+          VARIANT: ${{ inputs.variant }}
+        run: bash scripts/build-fixture.sh "$VERSION" dist "$VARIANT"
+      - name: Replace asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          name="pakomichi-r003-fixture_${VERSION}_all.deb"
+          gh release delete-asset "$TAG" "$name" --yes --repo "$GITHUB_REPOSITORY"
+          gh release upload "$TAG" "dist/$name" --repo "$GITHUB_REPOSITORY"
